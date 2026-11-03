@@ -1,12 +1,14 @@
 import * as vscode from 'vscode';
 import { DocsViewViewProvider } from './docsView';
 
+import { EditorTargets } from './editorTarget';
 import { createReference } from '../reference/service';
 
 export function activate(context: vscode.ExtensionContext) {
 
-	const reference = createReference(context, () => provider.refresh());
-	const provider = new DocsViewViewProvider(context.extensionUri, reference);
+	const targets = new EditorTargets();
+	const reference = createReference(context, () => provider.refresh(), () => targets.current());
+	const provider = new DocsViewViewProvider(context.extensionUri, reference, targets);
 	const report = (e: Error) => { vscode.window.showErrorMessage('Docs View: ' + e.message); };
 	const search = (query?: string) => reference.search(page => provider.showReference(page), query).catch(report);
 	context.subscriptions.push(reference,
@@ -31,4 +33,5 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('docsView.documentationView.unpin', () => {
 			provider.unpin();
 		}));
+	provider.revealAutomatically();
 }

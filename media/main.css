@@ -48,11 +48,71 @@ ol {
 	margin: 8px;
 }
 
-.ref-card { line-height: 1.5; padding-bottom: 12px; }
-.ref-meta { color: var(--vscode-descriptionForeground); font-size: .95em; }
-.ref-card h2 { overflow-wrap: anywhere; line-height: 1.25; margin: .35em 0 .65em; }
-.ref-signature { background: var(--vscode-textCodeBlock-background); padding: .75em; border-radius: 3px; }
-.ref-card pre, .ref-prose { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ref-card, .ref-empty {
+	font-family: var(--vscode-font-family);
+	font-size: var(--vscode-font-size, 13px);
+	line-height: 1.5;
+	color: var(--vscode-foreground);
+	padding-bottom: 16px;
+}
+#main > .ref-card, #main > .ref-empty { padding-inline: clamp(10px, 4vw, 20px); }
+.ref-meta, .ref-jumps { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 8px; }
+.ref-meta, .ref-path { color: var(--vscode-descriptionForeground); font-size: .91em; }
+.ref-kind {
+	font-weight: 650; padding: 1px 7px; border-radius: 4px;
+	color: var(--vscode-badge-foreground); background: var(--vscode-badge-background);
+}
+.ref-card .ref-heading {
+	margin: .45em 0 .1em; font-size: 1.35em; line-height: 1.25;
+	word-break: break-word; overflow-wrap: anywhere;
+}
+.ref-path { font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; }
+.ref-owner, .ref-card .ref-owner-link {
+	color: var(--vscode-symbolIcon-classForeground, var(--vscode-foreground)); font-weight: 750;
+}
+.ref-member { color: var(--vscode-foreground); font-weight: 600; }
+.ref-dot { color: var(--vscode-descriptionForeground); }
+.ref-card button, .ref-empty button, .ref-back {
+	font: inherit; color: var(--vscode-textLink-foreground); background: transparent;
+	border: 0; padding: 0; cursor: pointer;
+}
+.ref-card .ref-owner-link, .ref-card .ref-param-link { display: inline; overflow-wrap: anywhere; }
+.ref-card button:hover, .ref-empty button:hover, .ref-back:hover { text-decoration: underline; }
+.ref-card :focus-visible, .ref-empty :focus-visible, .ref-back:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px;
+}
+.ref-signature, .ref-example {
+	padding: 8px 10px; border-radius: 3px; background: var(--vscode-textCodeBlock-background);
+	font: 1em/1.6 var(--vscode-editor-font-family, monospace); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.ref-signature { margin: .7em 0; border-inline-start: 2px solid var(--vscode-textLink-foreground); }
+.ref-card .ref-param-link, .ref-definition dt strong {
+	color: var(--vscode-symbolIcon-variableForeground, var(--vscode-textLink-foreground)); font-weight: 650;
+}
+.ref-literal { color: var(--vscode-debugTokenExpression-number, var(--vscode-foreground)); }
+.ref-string { color: var(--vscode-debugTokenExpression-string, var(--vscode-foreground)); }
+.ref-keyword { color: var(--vscode-symbolIcon-keywordForeground, var(--vscode-foreground)); font-weight: 600; }
+.ref-comment { color: var(--vscode-descriptionForeground); font-style: italic; }
+.ref-summary { margin: .6em 0; }
+.ref-jumps { margin: .5em 0 .85em; }
+.ref-jumps button, .ref-empty button {
+	padding: 2px 7px; border-radius: 3px;
+	background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground);
+}
+.ref-jumps button:hover, .ref-empty button:hover { background: var(--vscode-button-secondaryHoverBackground); }
 .ref-section { border-top: 1px solid var(--vscode-widget-border, var(--vscode-sideBarSectionHeader-border)); padding: .4em 0; }
-.ref-section summary, #native-hover summary { cursor: pointer; font-weight: 600; padding: .25em 0; }
-.ref-section pre { line-height: 1.55; font-family: var(--vscode-editor-font-family); }
+.ref-section summary, #native-hover summary { cursor: pointer; font-weight: 650; padding: .22em 0; }
+.ref-prose, .ref-definition dd { white-space: pre-line; overflow-wrap: anywhere; }
+.ref-prose { margin: .6em 0; }
+.ref-definition { padding: .35em .55em; margin: .2em 0; border-inline-start: 2px solid transparent; }
+.ref-definition dt { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 .65em; }
+.ref-definition strong { font-family: var(--vscode-editor-font-family); }
+.ref-type { color: var(--vscode-descriptionForeground); font-size: .94em; overflow-wrap: anywhere; }
+.ref-definition dd { margin: .15em 0 0; }
+.ref-active-param {
+	background: var(--vscode-editor-findMatchHighlightBackground, var(--vscode-textCodeBlock-background));
+	border-inline-start-color: var(--vscode-focusBorder);
+}
+#main > .ref-back { padding: 0; margin: 0 12px .5em; }
+.vscode-high-contrast .ref-jumps button, .vscode-high-contrast-light .ref-jumps button,
+.vscode-high-contrast .ref-kind, .vscode-high-contrast-light .ref-kind { border: 1px solid var(--vscode-contrastBorder); }

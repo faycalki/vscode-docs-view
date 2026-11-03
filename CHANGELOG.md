@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.3.0 — Automatic Documentation and Jupyter notebooks
+
+- Reveal the view on startup and when editing resumes, while preserving keyboard focus.
+- Track notebook cell navigation, caret positions, and changes to imports in earlier cells.
+- Label classes, functions, methods and attributes. Link members to their owning class.
+- Link signatures and named arguments to parameter descriptions and add section shortcuts.
+
 ## 0.2.0 — Offline Python reference
 
 - Added versioned, cursor-following Python and data science references, with signatures, parameters and examples.

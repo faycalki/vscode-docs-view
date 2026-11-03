@@ -167,7 +167,7 @@ class Pack:
         self.docs = {}
         self.missing = []
 
-    def add(self, name, sig, doc, summary=None, tags="", url=None):
+    def add(self, name, sig, doc, summary=None, tags="", url=None, *, kind="symbol"):
         if not doc or not doc.strip() or not name or name in self.rows:
             return
         doc = doc.strip()
@@ -175,16 +175,23 @@ class Pack:
             doc += "\n\nQuick example\n-------------\n" + self.usage[name]
         # Store repeated inherited method docs once even if hundreds of estimators expose them.
         did = self.docs.setdefault(doc, len(self.docs))
-        self.rows[name] = [name, sig, synopsis(doc) if summary is None else summary, did, tags, url]
+        self.rows[name] = [name, sig, synopsis(doc) if summary is None else summary, did, tags, url, kind]
 
-    def add_obj(self, name, obj):
+    def add_obj(self, name, obj, kind=None):
         doc = doctext(obj)
         if doc:
             try:
                 form = signature(obj, name, doc)
             except (TypeError, ValueError, AttributeError, RuntimeError, RecursionError):
                 form = ""
-            self.add(name, form, doc)
+            if kind is None:
+                if inspect.isclass(obj):
+                    kind = "class"
+                elif inspect.isroutine(obj) or type(obj).__name__ == "ufunc":
+                    kind = "function"
+                else:
+                    kind = "callable" if callable(obj) else "attribute"
+            self.add(name, form, doc, kind=kind)
 
     def members(self, cls, parent):
         for key in dir(cls):
@@ -195,7 +202,7 @@ class Pack:
                 if isinstance(raw, (classmethod, staticmethod)):
                     raw = getattr(cls, key)
                 if inspect.isroutine(raw) or isinstance(raw, property) or inspect.isdatadescriptor(raw):
-                    self.add_obj(parent + "." + key, raw)
+                    self.add_obj(parent + "." + key, raw, "method" if inspect.isroutine(raw) else "attribute")
             except (AttributeError, TypeError, ValueError, ImportError):
                 continue
 
@@ -211,7 +218,7 @@ class Pack:
         except (ImportError, AttributeError, OSError, RuntimeError) as exc:
             self.missing.append(f"{modname} ({type(exc).__name__})")
             return
-        self.add(modname, modname, doctext(mod))
+        self.add(modname, modname, doctext(mod), kind="module")
         exports = getattr(mod, "__all__", None)
         for key in sorted(exports if exports is not None else vars(mod)):
             if key.startswith("_") or key in SKIP:
@@ -238,10 +245,10 @@ class Pack:
                     for method, form in re.findall(r"^\s*([a-z]+)(\([^\n]*\))\s*$", doctext(obj), re.M):
                         if hasattr(obj, method):
                             symbol = name + "." + method
-                            self.add(symbol, call_name(symbol) + form, doctext(getattr(obj, method)))
+                            self.add(symbol, call_name(symbol) + form, doctext(getattr(obj, method)), kind="method")
                 elif self.key == "numpy" and type(obj).__name__ == "ufunc":
                     for method in ("reduce", "accumulate", "outer", "reduceat", "at"):
-                        self.add_obj(name + "." + method, getattr(obj, method))
+                        self.add_obj(name + "." + method, getattr(obj, method), "method")
             except (TypeError, AttributeError, ValueError, RuntimeError, ImportError, OSError, RecursionError):
                 continue
 
@@ -265,7 +272,7 @@ def pandas_extras(pack):
         try:
             api = getattr(cls, attr)
             if inspect.isclass(api):
-                pack.add_obj(name, api)
+                pack.add_obj(name, api, "accessor")
                 pack.members(api, name)
         except (AttributeError, ImportError, TypeError):
             pass
@@ -296,12 +303,12 @@ def language(pack, cards):
         body = blurb + "\n\nExamples\n--------\n" + example
         if topic and topic in topics:
             body += "\n\nLanguage reference\n------------------\n" + topics[topic]
-        pack.add(key, form, body, blurb, tags)
+        pack.add(key, form, body, blurb, tags, kind="syntax")
     for topic, body in topics.items():
         if topic in used:
             continue
         name = body.splitlines()[0].strip()
-        pack.add("Python: " + name, "", body, name, topic.replace("-", " "))
+        pack.add("Python: " + name, "", body, name, topic.replace("-", " "), kind="syntax")
 
 
 def main():
@@ -328,7 +335,10 @@ def main():
             if key == "torch" and args.bundled:
                 for name, form, blurb, example in cards["torch"]:
                     doc = blurb + "\n\nExamples\n--------\n" + example
-                    pack.add(name, form, doc, blurb, "", f"https://docs.pytorch.org/docs/2.9/generated/{name}.html")
+                    kind = "method" if name.startswith("torch.Tensor.") else "function"
+                    if name.rsplit(".", 1)[-1][0].isupper() or name == "torch.no_grad":
+                        kind = "class"
+                    pack.add(name, form, doc, blurb, "", f"https://docs.pytorch.org/docs/2.9/generated/{name}.html", kind=kind)
                 manifest["packs"].append(pack.write(args.out, "2.9", "starter"))
             print(f"Skipped {LABELS[key]} ({type(exc).__name__}).", flush=True)
             continue
@@ -341,7 +351,7 @@ def main():
         for name, (form, blurb, example, tags) in cards["constants"].items():
             lib, attr = name.split(".")
             if lib == key and hasattr(importlib.import_module(lib), attr):
-                pack.add(name, form, blurb + "\n\nExamples\n--------\n" + example, blurb, tags)
+                pack.add(name, form, blurb + "\n\nExamples\n--------\n" + example, blurb, tags, kind="constant")
         for name, tags in cards["keywords"].items():
             if name in pack.rows:
                 pack.rows[name][4] = tags

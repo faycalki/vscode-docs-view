@@ -2,7 +2,7 @@
 	"name": "docs-view",
 	"displayName": "Docs View with Offline Python Reference",
 	"description": "Cursor-following documentation and instant offline Python library search in the same view.",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"publisher": "faycalki",
 	"keywords": [
 		"documentation",
@@ -122,6 +122,11 @@
 					"type": "boolean",
 					"default": true,
 					"description": "Show bundled Python reference entries when the cursor is on a recognized symbol."
+				},
+				"docsView.documentationView.autoOpen": {
+					"type": "boolean",
+					"default": true,
+					"description": "Automatically reveal Documentation at startup and when you return to editing a file or notebook cell. Keyboard focus stays in the editor."
 				}
 			}
 		},
@@ -164,6 +169,8 @@
 		"webpack-cli": "^4.9.0"
 	},
 	"activationEvents": [
+		"onStartupFinished",
+		"onNotebook:jupyter-notebook",
 		"onUri"
 	],
 	"capabilities": {

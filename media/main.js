@@ -2,25 +2,92 @@
 (() => {
   const api = acquireVsCodeApi();
   const main = document.getElementById('main');
-  let currentName, lastBody, lastHover;
+  let currentName, lastBody, lastHover, lastParameter;
   const clean = (html) => DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+
+  function button(label, action) {
+    const control = document.createElement('button');
+    control.textContent = label;
+    control.dataset.refAction = action;
+    return control;
+  }
+
+  function clearHighlight() {
+    main.querySelector('.ref-active-param')?.classList.remove('ref-active-param');
+  }
+
+  function reveal(element, focus) {
+    const section = element?.closest('details');
+    if (section) section.open = true;
+    element?.scrollIntoView({ block: 'nearest' });
+    if (focus) element?.focus({ preventScroll: true });
+  }
+
+  function jumpToParameter(name, focus) {
+    clearHighlight();
+    const row = [...main.querySelectorAll('.ref-definition')].find((el) =>
+      el.dataset.params.split(' ').includes(name)
+    );
+    if (row) {
+      row.classList.add('ref-active-param');
+      reveal(row, focus);
+    }
+  }
+
+  main.addEventListener('click', (event) => {
+    const control = event.target.closest('button');
+    if (!control || control.closest('#native-hover') || !main.contains(control)) return;
+    if (control.dataset.paramJump) jumpToParameter(control.dataset.paramJump, true);
+    else if (control.dataset.sectionJump) {
+      const section = [...main.querySelectorAll('.ref-section')].find(
+        (s) => s.dataset.section === control.dataset.sectionJump
+      );
+      if (section) {
+        section.open = true;
+        reveal(section.querySelector('summary'), true);
+      }
+    } else if (['parent', 'back', 'search'].includes(control.dataset.refAction)) {
+      api.postMessage({ type: control.dataset.refAction });
+    }
+  });
+
   window.addEventListener('message', ({ data }) => {
     if (data.type === 'noContent') {
-      const p = document.createElement('p');
-      p.className = 'no-content';
-      p.textContent = data.body;
-      main.replaceChildren(p);
-      currentName = lastBody = lastHover = undefined;
+      if (lastBody === null) return;
+      const empty = document.createElement('div'),
+        title = document.createElement('strong'),
+        hint = document.createElement('p');
+      empty.className = 'ref-empty';
+      title.textContent = 'Documentation';
+      hint.textContent = 'Place the cursor on a symbol in a file or notebook cell.';
+      empty.append(title, hint, button('Search Python Reference', 'search'));
+      main.replaceChildren(empty);
+      lastBody = null;
+      currentName = lastHover = lastParameter = undefined;
       return;
     }
     if (data.type !== 'update') return;
-    // A language server may answer after the reference appeared. Keep its scroll and open sections.
     if (currentName !== data.reference || lastBody !== data.body) {
       main.innerHTML = clean(data.body);
       currentName = data.reference;
       lastBody = data.body;
-      lastHover = undefined;
+      lastHover = lastParameter = undefined;
       window.scrollTo(0, 0);
+    }
+    // Late language-server updates must preserve the reader's scroll and expanded sections.
+    const back = main.querySelector('.ref-back');
+    if (data.back && !back) {
+      const control = button('← Back to member', 'back');
+      control.className = 'ref-back';
+      main.prepend(control);
+    } else if (!data.back && back) back.remove();
+    if (data.parameter !== lastParameter) {
+      lastParameter = data.parameter;
+      if (data.parameter) jumpToParameter(data.parameter, false);
+      else {
+        clearHighlight();
+        window.scrollTo(0, 0);
+      }
     }
     if (!data.reference || lastHover === data.hover) return;
     main.querySelector('#native-hover')?.remove();

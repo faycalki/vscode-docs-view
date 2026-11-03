@@ -157,6 +157,54 @@ function symbolAt(line, col) {
   return { expr: match[1].replace(/\s/g, ''), leaf: word[0] };
 }
 
+// Look up the owning call when the caret is on a named argument, including across lines.
+function keywordCall(lines, pos) {
+  const line = lines[pos.line];
+  if (!line) return null;
+  const word = [...line.matchAll(/[a-zA-Z_]\w*/g)].find(
+    (m) => m.index <= pos.character && pos.character <= m.index + m[0].length
+  );
+  if (!word || !/^\s*=(?!=)/.test(line.slice(word.index + word[0].length))) return null;
+  let depth = 0,
+    first = true;
+  for (let n = pos.line; n >= Math.max(0, pos.line - 100); n--) {
+    const before = n === pos.line ? line.slice(0, word.index) : lines[n];
+    for (let i = before.length - 1; i >= 0; i--) {
+      const ch = before[i];
+      if (/\s/.test(ch)) continue;
+      if (first && ch !== '(' && ch !== ',') return null;
+      first = false;
+      if (')]}'.includes(ch)) depth++;
+      if ('([{'.includes(ch)) {
+        if (depth > 0) {
+          depth--;
+          continue;
+        }
+        if (ch !== '(') return null;
+        const callee = /([A-Za-z_]\w*)\s*$/.exec(before.slice(0, i));
+        if (!callee || /\b(?:def|class)\s+$/.test(before.slice(0, callee.index))) return null;
+        return { parameter: word[0], position: { line: n, character: callee.index } };
+      }
+    }
+  }
+  return null;
+}
+
+function cellStart(doc) {
+  const lines = analyze(doc).lines;
+  for (let line = 0; line < lines.length; line++) {
+    const code = lines[line];
+    if (!code.trim() || /^\s*[%!]/.test(code)) continue;
+    const head =
+      /(?:\.\s*)?([A-Za-z_]\w*)\s*\(/.exec(code) ||
+      /\.\s*([A-Za-z_]\w*)/.exec(code) ||
+      /^\s*(?:from|import)\s+([A-Za-z_]\w*)/.exec(code) ||
+      /([A-Za-z_]\w*)/.exec(code);
+    if (head) return { line, character: head.index + head[0].indexOf(head[1]) };
+  }
+  return { line: 0, character: 0 };
+}
+
 function returnType(value) {
   if (!value) return null;
   if (/^sklearn\.(?:\w+\.)+[A-Z]\w*\.fit$/.test(value)) return value.slice(0, -4);
@@ -169,28 +217,34 @@ function resolve(doc, pos, catalog, previous = []) {
   const current = analyze(doc),
     token = symbolAt(current.lines[pos.line] || '', pos.character);
   if (!token) return null;
-  const scopes = previous.map(analyze).reverse();
+
   function lookup(name, scope, row, cell, depth) {
     if (depth > 16) return null;
-    for (let s = scope; s; s = s.parent) {
-      const bindings = s.names.get(name);
-      const binding = bindings && [...bindings].reverse().find((b) => b.row <= row);
-      if (!binding) {
-        // Python treats assignments anywhere in a function as local.
-        if (bindings && s.parent) return null;
-        continue;
+    // Walking a long notebook should not consume the expression recursion budget.
+    for (;;) {
+      for (let s = scope; s; s = s.parent) {
+        const bindings = s.names.get(name);
+        const binding = bindings && [...bindings].reverse().find((b) => b.row <= row);
+        if (!binding) {
+          // Python treats assignments anywhere in a function as local.
+          if (bindings && s.parent) return null;
+          continue;
+        }
+        const b = binding.value;
+        if (!b) return null;
+        if (b.direct) return b.direct;
+        const target = expression(b.expr, b.scope, b.row, cell, depth + 1);
+        if (b.tuple !== undefined)
+          return target === 'matplotlib.pyplot.subplots'
+            ? ['matplotlib.figure.Figure', 'matplotlib.axes.Axes'][b.tuple]
+            : null;
+        return target;
       }
-      const b = binding.value;
-      if (!b) return null;
-      if (b.direct) return b.direct;
-      const target = expression(b.expr, b.scope, b.row, cell, depth + 1);
-      if (b.tuple !== undefined)
-        return target === 'matplotlib.pyplot.subplots'
-          ? ['matplotlib.figure.Figure', 'matplotlib.axes.Axes'][b.tuple]
-          : null;
-      return target;
+      if (cell >= previous.length) break;
+      scope = analyze(previous[previous.length - 1 - cell]).root;
+      cell++;
+      row = Infinity;
     }
-    if (cell < scopes.length) return lookup(name, scopes[cell].root, Infinity, cell + 1, depth + 1);
     if (catalog.names.has('builtins.' + name)) return 'builtins.' + name;
     return keywords.has(name) ? 'Python: ' + keywords.get(name) : null;
   }
@@ -231,4 +285,4 @@ function fromDefinition(uri, leaf, catalog) {
   const matches = catalog.entries.filter((e) => e.pack.id === m[1] && e.name.split('.').pop() === leaf);
   return matches.length === 1 ? matches[0] : null;
 }
-module.exports = { analyze, resolve, symbolAt, fromDefinition };
+module.exports = { analyze, resolve, symbolAt, fromDefinition, keywordCall, cellStart };

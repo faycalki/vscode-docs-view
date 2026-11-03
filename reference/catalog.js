@@ -69,14 +69,14 @@ function subsequence(needle, haystack) {
 }
 
 function prepare(row, pack) {
-  const [name, sig, summary, doc, tags, link] = row;
+  const [name, sig, summary, doc, tags, link, kind] = row;
   const topic = name.startsWith('Python: ');
   const key = topic ? name.slice(8).toLowerCase() : name.toLowerCase()
     .replace(/^pandas\.core\.groupby\.generic\.(dataframegroupby|seriesgroupby)\./, 'pandas.api.typing.$1.');
   const leaf = topic ? key : key.split('.').pop();
   const cleanName = words(topic ? name.slice(8) : name);
   const compactLeaf = squeeze(leaf);
-  return {name, sig, summary, doc, tags: (tags || '').toLowerCase(), link, pack, key, leaf, cleanName,
+  return {name, sig, summary, doc, kind, tags: (tags || '').toLowerCase(), link, pack, key, leaf, cleanName,
     compactLeaf, compactName: squeeze(key), extra: (summary + ' ' + sig).toLowerCase(),
     priority: (POPULAR.has(name) ? 20 : 0) + (key.startsWith('builtins.') ? 7 : 0)
       - Math.min(6, key.split('.').length), topic};
@@ -138,6 +138,12 @@ class Catalog {
     const selected = [...packs.values()];
     const entries = await Promise.all(selected.map(async p => {
       const rows = await unzipJSON(path.join(p.root, p.id + '.index.gz'));
+      if (p.local && rows.some(row => !row[6])) {
+        // Indexes created by 0.2 lack symbol kinds. Reuse metadata for exact public names.
+        const bundledRows = await unzipJSON(path.join(bundled, p.id + '.index.gz'));
+        const kinds = new Map(bundledRows.map(row => [row[0], row[6]]));
+        for (const row of rows) row[6] ||= kinds.get(row[0]) || 'symbol';
+      }
       if (rows.length !== p.count) throw new Error('Incomplete index for ' + p.label + '.');
       return rows.map(row => prepare(row, p));
     }));

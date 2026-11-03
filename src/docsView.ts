@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { Renderer } from './renderer';
 import type { Reference, ReferencePage } from '../reference/service';
 
+import { EditorTargets, EditorTarget } from './editorTarget';
+
 enum UpdateMode {
 	Live = 'live',
 	Sticky = 'sticky',
@@ -21,8 +23,12 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 	private _currentCacheKey: CacheKey = cacheKeyNone;
 	private _loading?: { cts: vscode.CancellationTokenSource };
 
-	private _last?: {type: string; body: string; reference?: string; hover?: string};
+	private _last?: {type: string; body: string; reference?: string; hover?: string; parameter?: string; back?: boolean};
 	private _manual = false;
+	private _autoOpen = true;
+	private _revealing = false;
+	private _back?: ReferencePage;
+	private _page?: ReferencePage;
 
 	private _updateMode = UpdateMode.Live;
 	private _pinned = false;
@@ -30,15 +36,39 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
 		private readonly _reference: Reference,
+		private readonly _targets: EditorTargets,
 	) {
 		const moved = () => {
-			if (vscode.window.activeTextEditor) { this._manual = false; }
+			this._manual = false;
+			if (!this._pinned) { this._back = undefined; }
+			this.revealAutomatically();
 			this.update();
 		};
-		vscode.window.onDidChangeActiveTextEditor(moved, null, this._disposables);
-		vscode.window.onDidChangeTextEditorSelection(moved, null, this._disposables);
+		vscode.window.onDidChangeActiveTextEditor(editor => {
+			if (editor || vscode.window.activeNotebookEditor) { moved(); }
+			else { this.update(); }
+		}, null, this._disposables);
+		vscode.window.onDidChangeTextEditorSelection(e => {
+			this._targets.remember(e.textEditor);
+			if (e.textEditor === vscode.window.activeTextEditor) { moved(); }
+		}, null, this._disposables);
+		vscode.window.onDidChangeActiveNotebookEditor(editor => {
+			if (editor) { moved(); } else { this.update(); }
+		}, null, this._disposables);
+		vscode.window.onDidChangeNotebookEditorSelection(e => {
+			if (e.notebookEditor === vscode.window.activeNotebookEditor) { moved(); }
+		}, null, this._disposables);
 		vscode.workspace.onDidChangeTextDocument(e => {
-			if (e.document === vscode.window.activeTextEditor?.document) { moved(); }
+			if (!e.contentChanges.length) { return; }
+			if (e.document === this._targets.current()?.document) { moved(); return; }
+			const nb = vscode.window.activeNotebookEditor;
+			if (nb && e.document.uri.scheme === 'vscode-notebook-cell' &&
+				nb.notebook.getCells(new vscode.NotebookRange(0, nb.selection.start)).some(c => c.document === e.document)) {
+				this.refresh();
+			}
+		}, null, this._disposables);
+		vscode.workspace.onDidChangeNotebookDocument(e => {
+			if (e.notebook === vscode.window.activeNotebookEditor?.notebook && e.contentChanges.length) { this.refresh(); }
 		}, null, this._disposables);
 		this._disposables.push(this._renderer);
 
@@ -48,6 +78,7 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 
 		vscode.workspace.onDidChangeConfiguration(e => {
 			this.updateConfiguration();
+			if (e.affectsConfiguration('docsView.documentationView.autoOpen')) { this.revealAutomatically(); }
 			if (e.affectsConfiguration('docsView')) { this.refresh(); }
 		}, null, this._disposables);
 
@@ -84,13 +115,21 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 		});
 
 		webviewView.onDidDispose(() => {
-			this._view = undefined;
+			if (this._view === webviewView) { this._view = undefined; }
 		});
 
 		webviewView.webview.onDidReceiveMessage(message => {
-			if (message?.type === 'ready' && this._view === webviewView) {
+			if (this._view !== webviewView) { return; }
+			if (message?.type === 'parent') { this.showParent().catch(e => vscode.window.showErrorMessage('Docs View: ' + e.message)); }
+			if (message?.type === 'back' && this._back) {
+				const previous = this._back;
+				this._back = undefined;
+				this.showReference(previous, false);
+			}
+			if (message?.type === 'search') { vscode.commands.executeCommand('docsView.searchPythonReference', ''); }
+			if (message?.type === 'ready') {
 				if (this._last) { webviewView.webview.postMessage(this._last); }
-				this.update();
+				else { this.update(true); }
 			}
 		});
 		this.updateTitle();
@@ -167,26 +206,46 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 		this._loading = undefined;
 	}
 
-	private display(body: string, reference?: string, hover?: string) {
+	private display(body: string, page?: ReferencePage, hover?: string) {
 		if (!body && this._updateMode === UpdateMode.Sticky && this._last?.type === 'update') { return; }
-		this._last = body ? {type: 'update', body, reference, hover} :
+		this._page = page;
+		this._last = body ? {type: 'update', body, reference: page?.name, parameter: page?.parameter, back: !!this._back, hover} :
 			{type: 'noContent', body: 'No documentation found at current cursor position'};
 		this._view?.webview.postMessage(this._last);
 	}
 
 	public refresh() { this.update(true); }
 
-	public async showReference(page: ReferencePage) {
+	public revealAutomatically() {
+		if (!this._autoOpen || this._view?.visible || this._revealing) { return; }
+		this._revealing = true;
+		Promise.resolve(vscode.commands.executeCommand(DocsViewViewProvider.viewType + '.focus', {preserveFocus: true}))
+			.catch(e => console.warn('Docs View could not open', e))
+			.finally(() => { this._revealing = false; });
+	}
+
+	private async showParent() {
+		const from = this._page;
+		if (!from?.owner) { return; }
+		const page = await this._reference.named(from.owner);
+		if (this._page !== from || !page) { return; }
+		this._back = from;
+		await this.showReference(page, false);
+	}
+
+	public async showReference(page: ReferencePage, focus = true) {
 		this.cancel();
 		this._manual = true;
-		this.display(page.html, page.name);
-		await vscode.commands.executeCommand(DocsViewViewProvider.viewType + '.focus');
+		this._currentCacheKey = cacheKeyNone;
+		if (focus) { this._back = undefined; }
+		this.display(page.html, page);
+		if (focus) { await vscode.commands.executeCommand(DocsViewViewProvider.viewType + '.focus'); }
 		this._view?.webview.postMessage(this._last);
 	}
 
 	private async update(ignoreCache = false) {
 		if (!this._view?.visible || this._pinned || this._manual) { return; }
-		const editor = vscode.window.activeTextEditor;
+		const editor = this._targets.current();
 		const key = createCacheKey(editor);
 		if (!ignoreCache && cacheKeyEquals(this._currentCacheKey, key)) { return; }
 		this._currentCacheKey = key;
@@ -202,7 +261,7 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 		let hover = '';
 		const paint = (finished = false) => {
 			if (this._loading !== current || token.isCancellationRequested) { return; }
-			if (page) { this.display(page.html, page.name, hover); }
+			if (page) { this.display(page.html, page, hover); }
 			else if (hover || finished) { this.display(hover); }
 		};
 		const local = this._reference.at(doc, pos, token).then(result => {
@@ -226,6 +285,7 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 
 	private updateConfiguration() {
 		const config = vscode.workspace.getConfiguration('docsView');
+		this._autoOpen = config.get<boolean>('documentationView.autoOpen', true);
 		this._updateMode = config.get<UpdateMode>('documentationView.updateMode') || UpdateMode.Live;
 	}
 }
@@ -291,7 +351,7 @@ function cacheKeyEquals(a: CacheKey, b: CacheKey): boolean {
 	return a.equals(b);
 }
 
-function createCacheKey(editor: vscode.TextEditor | undefined): CacheKey {
+function createCacheKey(editor: EditorTarget | undefined): CacheKey {
 	if (!editor) {
 		return cacheKeyNone;
 	}

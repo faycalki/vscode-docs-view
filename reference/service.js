@@ -1,79 +1,38 @@
 'use strict';
 const vscode = require('vscode');
 const { createEnvironment } = require('./environment');
-const { analyze, resolve, symbolAt, fromDefinition } = require('./python-symbols');
+const {
+  analyze,
+  resolve,
+  symbolAt,
+  fromDefinition,
+  keywordCall,
+  cellStart
+} = require('./python-symbols');
 const { seedAt } = require('./catalog');
 
-function escape(value) {
-  return String(value || '').replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
-  );
-}
-function renderEntry(entry, body) {
-  const sections = [{ title: '', lines: [] }],
-    lines = body.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    const title = lines[i].trim();
-    if (title && /^[=~^-]{3,}$/.test((lines[i + 1] || '').trim()) && !/^[=~^-]+$/.test(title)) {
-      sections.push({ title, lines: [] });
-      i++;
-    } else if (/^(args|arguments|keyword args|returns|raises|examples?|shape):$/i.test(title)) {
-      sections.push({ title: title.slice(0, -1), lines: [] });
-    } else sections[sections.length - 1].lines.push(lines[i]);
-  }
-  const details = sections
-    .map((s) => {
-      const txt = s.lines.join('\n').trim();
-      if (!s.title)
-        return txt && txt !== entry.summary ? '<div class="ref-prose">' + escape(txt) + '</div>' : '';
-      return (
-        '<details class="ref-section"' +
-        (/^(parameters|args|examples?|quick example)$/i.test(s.title) ? ' open' : '') +
-        '><summary>' +
-        escape(s.title) +
-        '</summary><pre>' +
-        escape(txt) +
-        '</pre></details>'
-      );
-    })
-    .join('');
-  return (
-    '<section class="ref-card"><div class="ref-meta">' +
-    escape(entry.pack.label) +
-    ' ' +
-    escape(entry.pack.version) +
-    ' · ' +
-    (entry.pack.local
-      ? 'Your environment'
-      : entry.pack.kind === 'starter'
-        ? 'Starter reference'
-        : 'Bundled reference') +
-    '</div><h2>' +
-    escape(entry.name) +
-    '</h2>' +
-    (entry.sig ? '<pre class="ref-signature"><code>' + escape(entry.sig) + '</code></pre>' : '') +
-    '<p>' +
-    escape(entry.summary) +
-    '</p>' +
-    details +
-    '</section>'
-  );
-}
+const { formatEntry } = require('./format');
+
 function previousCells(doc) {
   if (doc.uri.scheme !== 'vscode-notebook-cell') return [];
-  for (const notebook of vscode.workspace.notebookDocuments) {
-    const cells = notebook.getCells();
-    const index = cells.findIndex((c) => c.document === doc);
-    if (index >= 0)
-      return cells
-        .slice(0, index)
-        .map((c) => c.document)
-        .filter((d) => d.languageId === 'python');
+  const editor = vscode.window.activeNotebookEditor;
+  let notebook = editor?.notebook;
+  let index = editor?.selection.start ?? -1;
+  if (!notebook || index < 0 || index >= notebook.cellCount || notebook.cellAt(index).document !== doc) {
+    notebook = vscode.workspace.notebookDocuments.find((nb) =>
+      nb.getCells().some((cell) => cell.document === doc)
+    );
+    if (!notebook) return [];
+    index = notebook.getCells().findIndex((cell) => cell.document === doc);
   }
-  return [];
+  return notebook
+    .getCells(new vscode.NotebookRange(0, index))
+    .filter(
+      (cell) => cell.kind === vscode.NotebookCellKind.Code && cell.document.languageId === 'python'
+    )
+    .map((cell) => cell.document);
 }
-function createReference(context, changed) {
+function createReference(context, changed, targetEditor) {
   let rendered = new Map(),
     picker;
   const env = createEnvironment(context, () => {
@@ -85,7 +44,7 @@ function createReference(context, changed) {
       if (rendered.size >= 48) rendered.delete(rendered.keys().next().value);
       const task = c
         .body(e.name)
-        .then((body) => renderEntry(e, body))
+        .then((body) => formatEntry(e, body, c))
         .catch((err) => {
           rendered.delete(e);
           throw err;
@@ -100,26 +59,30 @@ function createReference(context, changed) {
       !vscode.workspace.getConfiguration('docsView', doc.uri).get('pythonReference.enabled', true)
     )
       return null;
-    const line = analyze(doc).lines[pos.line] || '',
-      target = symbolAt(line, pos.character);
+    const lines = analyze(doc).lines;
+    const call = keywordCall(lines, pos);
+    const lookup = call ? new vscode.Position(call.position.line, call.position.character) : pos;
+    const target = symbolAt(lines[lookup.line] || '', lookup.character);
     if (!target || token.isCancellationRequested) return null;
     const c = await env.catalog();
     if (token.isCancellationRequested) return null;
-    let entry = resolve(doc, pos, c, previousCells(doc));
+    let entry = resolve(doc, lookup, c, previousCells(doc));
     if (!entry) {
       const locations = await vscode.commands.executeCommand(
         'vscode.executeDefinitionProvider',
         doc.uri,
-        pos
+        lookup
       );
       if (token.isCancellationRequested || locations?.length !== 1) return null;
       const uri = locations[0].targetUri || locations[0].uri;
       if (uri) entry = fromDefinition(uri.path, target.leaf, c);
     }
-    return entry ? { name: entry.name, html: await render(c, entry) } : null;
+    if (!entry || token.isCancellationRequested) return null;
+    const page = await render(c, entry);
+    return call ? { ...page, parameter: call.parameter } : page;
   }
   async function search(show, explicit) {
-    const editor = vscode.window.activeTextEditor;
+    const editor = targetEditor();
     const fromCursor =
       editor?.document.languageId === 'python'
         ? editor.selection.isEmpty
@@ -149,6 +112,8 @@ function createReference(context, changed) {
         alwaysShow: true,
         entry: e
       }));
+      // Assign focus to the ranked match as soon as the query results change.
+      qp.activeItems = qp.items.slice(0, 1);
     };
     const subscriptions = [
       qp.onDidChangeValue(setItems),
@@ -157,7 +122,7 @@ function createReference(context, changed) {
         if (!item || !c) return;
         qp.hide();
         try {
-          await show({ name: item.entry.name, html: await render(c, item.entry) });
+          await show(await render(c, item.entry));
           await context.workspaceState.update(
             'reference.recent',
             [item.entry.name, ...recent.filter((n) => n !== item.entry.name)].slice(0, 8)
@@ -194,6 +159,11 @@ function createReference(context, changed) {
   }
   return {
     at,
+    async named(name) {
+      const c = await env.catalog();
+      const entry = c.names.get(name);
+      return entry ? render(c, entry) : null;
+    },
     search,
     complete,
     rebuild: env.rebuild,
@@ -201,4 +171,4 @@ function createReference(context, changed) {
     dispose: () => picker?.dispose()
   };
 }
-module.exports = { createReference, renderEntry };
+module.exports = { createReference, cellStart };
