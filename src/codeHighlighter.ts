@@ -30,7 +30,7 @@ export class CodeHighlighter {
 
 	private readonly _disposables: vscode.Disposable[] = [];
 
-	private _highlighter?: Promise<Highlighter>;
+	private _highlighter?: Promise<Highlighter | undefined>;
 
 	constructor() {
 		this._needsRender = new vscode.EventEmitter<void>();
@@ -39,13 +39,11 @@ export class CodeHighlighter {
 
 		vscode.workspace.onDidChangeConfiguration(e => {
 			if (e.affectsConfiguration('workbench.colorTheme')) {
-				this.update().then(() => {
-					this._needsRender.fire();
-				});
+				this._highlighter = undefined;
+				this._needsRender.fire();
 			}
 		}, null, this._disposables);
 
-		this.update();
 	}
 
 	private readonly _needsRender: vscode.EventEmitter<void>;
@@ -59,7 +57,7 @@ export class CodeHighlighter {
 	}
 
 	public async getHighlighter(document: vscode.TextDocument): Promise<(code: string, language: string) => string> {
-		const highlighter = await this._highlighter;
+		const highlighter = await (this._highlighter ??= CodeHighlighter.createHighlighter());
 
 		return (code: string, inputLanguage: string): string => {
 			const language = inputLanguage || document.languageId;
@@ -74,21 +72,21 @@ export class CodeHighlighter {
 				}
 			}
 
-			return code;
+			return '<pre><code>' + code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</code></pre>';
 		};
 	}
 
-	private async update() {
-		const theme = (await CodeHighlighter.getShikiTheme()) ?? 'dark-plus';
-		this._highlighter = shiki.getHighlighter({ theme });
+	private static async createHighlighter(): Promise<Highlighter | undefined> {
+		const fallback = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Light ? 'light-plus' : 'dark-plus';
+		const theme = await CodeHighlighter.getShikiTheme().catch(() => undefined);
+		return shiki.getHighlighter({theme: theme ?? fallback}).catch(() => undefined);
 	}
 
-	private static async getShikiTheme(): Promise<IShikiTheme | undefined> {
-		let theme: string | IShikiTheme | undefined;
-
+	private static async getShikiTheme(): Promise<Theme | IShikiTheme | undefined> {
+		let theme: IShikiTheme | undefined;
 		const currentThemeName = vscode.workspace.getConfiguration('workbench').get<string>('colorTheme');
 		if (currentThemeName && defaultThemesMap.has(currentThemeName)) {
-			theme = defaultThemesMap.get(currentThemeName);
+			return defaultThemesMap.get(currentThemeName);
 		} else if (currentThemeName) {
 			const colorThemePath = getCurrentThemePath(currentThemeName);
 			if (colorThemePath) {
@@ -106,9 +104,6 @@ export class CodeHighlighter {
 			}
 		}
 
-		if (typeof theme === 'string') {
-			theme = await shiki.loadTheme(theme as any);
-		}
 
 		if (theme) {
 			theme.bg = ' '; // Don't set bg so that we use the view's background instead

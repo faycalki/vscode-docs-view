@@ -1,5 +1,3 @@
-import DOMPurify from 'dompurify';
-import { JSDOM } from 'jsdom';
 import { Marked } from "marked";
 import * as vscode from 'vscode';
 import { CodeHighlighter } from './codeHighlighter';
@@ -12,7 +10,6 @@ export class Renderer {
 
 	public readonly needsRender: vscode.Event<void>;
 
-	private readonly _purify = DOMPurify(new JSDOM('').window);
 
 	constructor() {
 		this._highlighter = new CodeHighlighter();
@@ -47,8 +44,8 @@ export class Renderer {
 			}
 		});
 
-		const renderedMarkdown = await marked.parse(markdown, {});
-		return this._purify.sanitize(renderedMarkdown, { USE_PROFILES: { html: true } });
+		// The webview sanitizes markup in its own DOM immediately before insertion.
+		return marked.parse(markdown, {});
 	}
 
 	private getMarkdown(content: vscode.MarkedString | vscode.MarkdownString): string {

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { Renderer } from './renderer';
+import type { Reference, ReferencePage } from '../reference/service';
 
 enum UpdateMode {
 	Live = 'live',
@@ -20,26 +21,34 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 	private _currentCacheKey: CacheKey = cacheKeyNone;
 	private _loading?: { cts: vscode.CancellationTokenSource };
 
+	private _last?: {type: string; body: string; reference?: string; hover?: string};
+	private _manual = false;
+
 	private _updateMode = UpdateMode.Live;
 	private _pinned = false;
 
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
+		private readonly _reference: Reference,
 	) {
-		vscode.window.onDidChangeActiveTextEditor(() => {
+		const moved = () => {
+			if (vscode.window.activeTextEditor) { this._manual = false; }
 			this.update();
+		};
+		vscode.window.onDidChangeActiveTextEditor(moved, null, this._disposables);
+		vscode.window.onDidChangeTextEditorSelection(moved, null, this._disposables);
+		vscode.workspace.onDidChangeTextDocument(e => {
+			if (e.document === vscode.window.activeTextEditor?.document) { moved(); }
 		}, null, this._disposables);
-
-		vscode.window.onDidChangeTextEditorSelection(() => {
-			this.update();
-		}, null, this._disposables);
+		this._disposables.push(this._renderer);
 
 		this._renderer.needsRender(() => {
 			this.update(/* force */ true);
 		}, undefined, this._disposables);
 
-		vscode.workspace.onDidChangeConfiguration(() => {
+		vscode.workspace.onDidChangeConfiguration(e => {
 			this.updateConfiguration();
+			if (e.affectsConfiguration('docsView')) { this.refresh(); }
 		}, null, this._disposables);
 
 		this.updateConfiguration();
@@ -47,6 +56,7 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	dispose() {
+		this.cancel();
 		let item: vscode.Disposable | undefined;
 		while ((item = this._disposables.pop())) {
 			item.dispose();
@@ -77,6 +87,12 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 			this._view = undefined;
 		});
 
+		webviewView.webview.onDidReceiveMessage(message => {
+			if (message?.type === 'ready' && this._view === webviewView) {
+				if (this._last) { webviewView.webview.postMessage(this._last); }
+				this.update();
+			}
+		});
 		this.updateTitle();
 		webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
@@ -97,6 +113,8 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 		}
 
 		this._pinned = value;
+		if (value) { this.cancel(); } else { this._manual = false; this._currentCacheKey = cacheKeyNone; }
+		this.updateTitle();
 		vscode.commands.executeCommand('setContext', DocsViewViewProvider.pinnedContext, value);
 
 		this.update();
@@ -111,6 +129,7 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 
 	private _getHtmlForWebview(webview: vscode.Webview) {
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
+		const purifyUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'vendor', 'purify.min.js'));
 		const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
 
 		const nonce = getNonce();
@@ -136,97 +155,73 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 			<body>
 				<article id="main"></article>
 
+				<script nonce="${nonce}" src="${purifyUri}"></script>
 				<script nonce="${nonce}" src="${scriptUri}"></script>
 			</body>
 			</html>`;
 	}
 
+	private cancel() {
+		this._loading?.cts.cancel();
+		this._loading?.cts.dispose();
+		this._loading = undefined;
+	}
+
+	private display(body: string, reference?: string, hover?: string) {
+		if (!body && this._updateMode === UpdateMode.Sticky && this._last?.type === 'update') { return; }
+		this._last = body ? {type: 'update', body, reference, hover} :
+			{type: 'noContent', body: 'No documentation found at current cursor position'};
+		this._view?.webview.postMessage(this._last);
+	}
+
+	public refresh() { this.update(true); }
+
+	public async showReference(page: ReferencePage) {
+		this.cancel();
+		this._manual = true;
+		this.display(page.html, page.name);
+		await vscode.commands.executeCommand(DocsViewViewProvider.viewType + '.focus');
+		this._view?.webview.postMessage(this._last);
+	}
+
 	private async update(ignoreCache = false) {
-		if (!this._view) {
-			return;
-		}
+		if (!this._view?.visible || this._pinned || this._manual) { return; }
+		const editor = vscode.window.activeTextEditor;
+		const key = createCacheKey(editor);
+		if (!ignoreCache && cacheKeyEquals(this._currentCacheKey, key)) { return; }
+		this._currentCacheKey = key;
+		this.cancel();
+		if (!editor) { this.display(''); return; }
 
-		this.updateTitle();
-
-		if (this._pinned) {
-			return;
-		}
-
-		const newCacheKey = createCacheKey(vscode.window.activeTextEditor);
-		if (!ignoreCache && cacheKeyEquals(this._currentCacheKey, newCacheKey)) {
-			return;
-		}
-
-		this._currentCacheKey = newCacheKey;
-
-		if (this._loading) {
-			this._loading.cts.cancel();
-			this._loading = undefined;
-		}
-
-		const loadingEntry = { cts: new vscode.CancellationTokenSource() };
-		this._loading = loadingEntry;
-
-		const updatePromise = (async () => {
-			const html = await this.getHtmlContentForActiveEditor(loadingEntry.cts.token);
-			if (loadingEntry.cts.token.isCancellationRequested) {
-				return;
-			}
-
-			if (this._loading !== loadingEntry) {
-				// A new entry has started loading since we started
-				return;
-			}
-			this._loading = undefined;
-
-			if (html.length) {
-				this._view?.webview.postMessage({
-					type: 'update',
-					body: html,
-					updateMode: this._updateMode,
-				});
-			} else {
-				this._view?.webview.postMessage({
-					type: 'noContent',
-					body: 'No documentation found at current cursor position',
-					updateMode: this._updateMode,
-				});
+		const current = {cts: new vscode.CancellationTokenSource()};
+		this._loading = current;
+		const token = current.cts.token;
+		const doc = editor.document;
+		const pos = editor.selection.active;
+		let page: ReferencePage | null = null;
+		let hover = '';
+		const paint = (finished = false) => {
+			if (this._loading !== current || token.isCancellationRequested) { return; }
+			if (page) { this.display(page.html, page.name, hover); }
+			else if (hover || finished) { this.display(hover); }
+		};
+		const local = this._reference.at(doc, pos, token).then(result => {
+			page = result;
+			if (page) { paint(); }
+		});
+		const native = (async () => {
+			const hovers = await vscode.commands.executeCommand<vscode.Hover[]>('vscode.executeHoverProvider', doc.uri, pos);
+			if (hovers?.length && !token.isCancellationRequested) {
+				hover = await this._renderer.render(doc, hovers);
+				if (hover) { paint(); }
 			}
 		})();
-
-		await Promise.race([
-			updatePromise,
-
-			// Don't show progress indicator right away, which causes a flash
-			new Promise<void>(resolve => setTimeout(resolve, 250)).then(() => {
-				if (loadingEntry.cts.token.isCancellationRequested) {
-					return;
-				}
-				return vscode.window.withProgress({ location: { viewId: DocsViewViewProvider.viewType } }, () => updatePromise);
-			}),
-		]);
-	}
-
-	private async getHtmlContentForActiveEditor(token: vscode.CancellationToken): Promise<string> {
-		const editor = vscode.window.activeTextEditor;
-		if (!editor) {
-			return '';
+		await Promise.allSettled([local, native]);
+		paint(true);
+		if (this._loading === current) {
+			this._loading = undefined;
+			current.cts.dispose();
 		}
-
-		const hovers = await this.getHoversAtCurrentPositionInEditor(editor);
-
-		if (token.isCancellationRequested) {
-			return '';
-		}
-
-		return hovers?.length ? this._renderer.render(editor.document, hovers) : '';
-	}
-
-	private getHoversAtCurrentPositionInEditor(editor: vscode.TextEditor) {
-		return vscode.commands.executeCommand<vscode.Hover[]>(
-			'vscode.executeHoverProvider',
-			editor.document.uri,
-			editor.selection.active);
 	}
 
 	private updateConfiguration() {

@@ -47,3 +47,12 @@ ol {
 	padding-left: 20px;
 	margin: 8px;
 }
+
+.ref-card { line-height: 1.5; padding-bottom: 12px; }
+.ref-meta { color: var(--vscode-descriptionForeground); font-size: .95em; }
+.ref-card h2 { overflow-wrap: anywhere; line-height: 1.25; margin: .35em 0 .65em; }
+.ref-signature { background: var(--vscode-textCodeBlock-background); padding: .75em; border-radius: 3px; }
+.ref-card pre, .ref-prose { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ref-section { border-top: 1px solid var(--vscode-widget-border, var(--vscode-sideBarSectionHeader-border)); padding: .4em 0; }
+.ref-section summary, #native-hover summary { cursor: pointer; font-weight: 600; padding: .25em 0; }
+.ref-section pre { line-height: 1.55; font-family: var(--vscode-editor-font-family); }

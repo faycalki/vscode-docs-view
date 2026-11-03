@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.2.0 — Offline Python reference
+
+- Added versioned, cursor-following Python and data science references, with signatures, parameters and examples.
+- Added keyboard search, autocomplete, notebook import resolution, and optional interpreter-specific indexing.
+- Kept the original Documentation view, hover rendering, pinning, and live/sticky modes.
+
 ## 0.1.0 - January 19, 2024
 - Update Shiki versions. Thanks @bricker!
 - Run dompurify over rendered content.

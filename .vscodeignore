@@ -1,13 +1,15 @@
-.vscode
-design
-node_modules
-package-json.lock
+.vscode/**
+design/**
+.gitignore
+.eslintrc.js
+src/**
+test/**
+scripts/**
+downloads/**
+reference/bundled.zip
+reference/*.js
+reference/*.d.ts
+package-lock.json
 tsconfig.json
 webpack.config.js
-
-**/*.ts
 **/*.map
-
-# Explicitly include non-bundled node_modules
-!node_modules
-node_modules/marked
