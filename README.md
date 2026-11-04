@@ -4,9 +4,9 @@ Click a Python function and read its signature, parameters, and examples in the 
 
 ## Install
 
-1. Download [docs-view-0.3.0.vsix](https://github.com/faycalki/vscode-docs-view/raw/refs/heads/master/downloads/docs-view-0.3.0.vsix).
+1. After the first Marketplace release, install **Docs View with Offline Python Reference** by `faycalki` in VS Code, or run `code --install-extension faycalki.docs-view`. For a manual install, extract the VSIX from the release kit. The [original 0.3.0 installer](https://github.com/faycalki/vscode-docs-view/raw/refs/heads/master/downloads/docs-view-0.3.0.vsix) is also available.
 2. If you use the original **Docs View** by bierner, disable it first. Both extensions contribute the same view and commands.
-3. In VS Code, run **Extensions: Install from VSIX…** from the Command Palette and choose the file. Or run `code --install-extension ~/Downloads/docs-view-0.3.0.vsix`.
+3. For a manual install, run **Extensions: Install from VSIX…** from the Command Palette and choose the extracted VSIX.
 4. Reload VS Code if prompted. **Documentation** opens at startup and reopens when you return to a file or notebook cell. You can keep typing while it opens. Drag the view to the secondary sidebar or bottom panel if you prefer more width.
 
 ## While coding
@@ -44,13 +44,14 @@ All languages with a VS Code hover provider can display their normal syntax-high
 
 ## Build
 
-Use Node.js 20.19+ or 22.12+, npm, and Python 3.10+. From the repository root:
+Use Node.js 24 LTS, npm, and Python 3.10+ in the repository root.
 
 ```sh
 npm ci --ignore-scripts
 npm test
-npm run vscode:prepublish
-npx @vscode/vsce@3.6.2 package --out downloads/docs-view-0.3.0.vsix
+npm run release:zip
 ```
+
+The VSIX is written to the repository root and the complete release kit to `release/`. The [publishing guide](https://github.com/faycalki/vscode-docs-view/blob/master/PUBLISHING.md) covers first-time Marketplace setup and automatic patch releases.
 
 The build expands `reference/bundled.zip` into individually compressed files. The extension reads an index once, then loads documentation bodies on demand. The source [indexer](reference/scripts/build_index.py) lists the covered modules. Package licenses are in [reference/licenses](reference/licenses). The original extension is available at [mattbierner/vscode-docs-view](https://github.com/mattbierner/vscode-docs-view).

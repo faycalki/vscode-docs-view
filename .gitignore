@@ -6,3 +6,8 @@ dist/
 .vs
 
 /reference/data/
+/*.vsix
+/release/
+/SOURCE-FILES.txt
+/SHA256SUMS
+__pycache__/

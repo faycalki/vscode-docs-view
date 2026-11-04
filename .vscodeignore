@@ -1,4 +1,11 @@
 .vscode/**
+.github/**
+release/**
+**/*.vsix
+**/__pycache__/**
+PUBLISHING.md
+SOURCE-FILES.txt
+SHA256SUMS
 design/**
 .gitignore
 .eslintrc.js
