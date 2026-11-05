@@ -1,7 +1,7 @@
 {
-	"name": "docs-view",
-	"displayName": "Docs View with Offline Python Reference",
-	"description": "Cursor-following documentation and instant offline Python library search in the same view.",
+	"name": "docs-view-enhanced",
+	"displayName": "Docs View Enhanced with Seamless Python, NumPy, Pandas, Scipy, and SkLearn Offline libraries integration through Fuzzy Search",
+	"description": "Cursor-following documentation with instant offline Python and Data Science/Machine Learning libraries search in the same view.",
 	"version": "0.3.0",
 	"publisher": "faycalki",
 	"license": "MIT",
