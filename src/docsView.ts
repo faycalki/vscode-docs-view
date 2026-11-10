@@ -1,19 +1,24 @@
 import * as vscode from 'vscode';
 import { Renderer } from './renderer';
 import type { Reference, ReferencePage } from '../reference/service';
+import { settingEnabled } from '../reference/service';
 
 import { EditorTargets, EditorTarget } from './editorTarget';
 
-enum UpdateMode {
-	Live = 'live',
-	Sticky = 'sticky',
+type Tab = 'cursor' | 'search';
+
+interface Card {
+	body: string;
+	page?: ReferencePage;
+	hover?: string;
+	back?: Card;
 }
 
 export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 
-	public static readonly viewType = 'docsView.documentation';
+	public static readonly viewType = 'pythonSyntaxShelf.documentation';
 
-	private static readonly pinnedContext = 'docsView.documentationView.isPinned';
+	private static readonly pinnedContext = 'pythonSyntaxShelf.documentationView.isPinned';
 
 	private readonly _disposables: vscode.Disposable[] = [];
 
@@ -23,14 +28,10 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 	private _currentCacheKey: CacheKey = cacheKeyNone;
 	private _loading?: { cts: vscode.CancellationTokenSource };
 
-	private _last?: {type: string; body: string; reference?: string; hover?: string; parameter?: string; back?: boolean};
-	private _manual = false;
+	private readonly _cards: Partial<Record<Tab, Card>> = {};
+	private _tab: Tab = 'cursor';
 	private _autoOpen = true;
 	private _revealing = false;
-	private _back?: ReferencePage;
-	private _page?: ReferencePage;
-
-	private _updateMode = UpdateMode.Live;
 	private _pinned = false;
 
 	constructor(
@@ -39,8 +40,6 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 		private readonly _targets: EditorTargets,
 	) {
 		const moved = () => {
-			this._manual = false;
-			if (!this._pinned) { this._back = undefined; }
 			this.revealAutomatically();
 			this.update();
 		};
@@ -78,8 +77,10 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 
 		vscode.workspace.onDidChangeConfiguration(e => {
 			this.updateConfiguration();
-			if (e.affectsConfiguration('docsView.documentationView.autoOpen')) { this.revealAutomatically(); }
-			if (e.affectsConfiguration('docsView')) { this.refresh(); }
+			if (e.affectsConfiguration('pythonSyntaxShelf') || e.affectsConfiguration('docsView')) {
+				this.revealAutomatically();
+				this.refresh();
+			}
 		}, null, this._disposables);
 
 		this.updateConfiguration();
@@ -110,6 +111,7 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 
 		webviewView.onDidChangeVisibility(() => {
 			if (this._view?.visible) {
+				this.sendCard();
 				this.update(/* force */ true);
 			}
 		});
@@ -120,17 +122,20 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 
 		webviewView.webview.onDidReceiveMessage(message => {
 			if (this._view !== webviewView) { return; }
-			if (message?.type === 'parent') { this.showParent().catch(e => vscode.window.showErrorMessage('Docs View: ' + e.message)); }
-			if (message?.type === 'back' && this._back) {
-				const previous = this._back;
-				this._back = undefined;
-				this.showReference(previous, false);
+			if (message?.type === 'parent') { this.showParent().catch(e => vscode.window.showErrorMessage('Python Syntax Shelf: ' + e.message)); }
+			if (message?.type === 'back') {
+				const back = this.visibleCard()?.back;
+				if (back) {
+					this.cancel();
+					this._cards[this._tab] = back;
+					this.sendCard();
+				}
 			}
-			if (message?.type === 'search') { vscode.commands.executeCommand('docsView.searchPythonReference', ''); }
-			if (message?.type === 'ready') {
-				if (this._last) { webviewView.webview.postMessage(this._last); }
-				else { this.update(true); }
+			if (message?.type === 'tab' && (message.tab === 'cursor' || message.tab === 'search')) {
+				this.selectTab(message.tab);
 			}
+			if (message?.type === 'search') { vscode.commands.executeCommand('pythonSyntaxShelf.searchPythonReference', ''); }
+			if (message?.type === 'ready') { this.sendCard(); }
 		});
 		this.updateTitle();
 		webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
@@ -152,7 +157,7 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 		}
 
 		this._pinned = value;
-		if (value) { this.cancel(); } else { this._manual = false; this._currentCacheKey = cacheKeyNone; }
+		if (value) { this.cancel(); } else { this._currentCacheKey = cacheKeyNone; }
 		this.updateTitle();
 		vscode.commands.executeCommand('setContext', DocsViewViewProvider.pinnedContext, value);
 
@@ -163,7 +168,7 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 		if (!this._view) {
 			return;
 		}
-		this._view.description = this._pinned ? "(pinned)" : undefined;
+		this._view.description = this._pinned && this._tab === 'cursor' ? "(pinned)" : undefined;
 	}
 
 	private _getHtmlForWebview(webview: vscode.Webview) {
@@ -192,7 +197,14 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 				<title>Documentation View</title>
 			</head>
 			<body>
-				<article id="main"></article>
+				<div class="shelf-nav">
+					<div role="tablist" aria-label="Documentation source">
+						<button type="button" id="cursor-tab" role="tab" data-tab="cursor" aria-selected="true" aria-controls="main">Cursor</button>
+						<button type="button" id="search-tab" role="tab" data-tab="search" aria-selected="false" aria-controls="main" tabindex="-1">Search</button>
+					</div>
+					<button type="button" id="new-search" hidden>New search…</button>
+				</div>
+				<article id="main" role="tabpanel" aria-labelledby="cursor-tab" tabindex="0"></article>
 
 				<script nonce="${nonce}" src="${purifyUri}"></script>
 				<script nonce="${nonce}" src="${scriptUri}"></script>
@@ -206,12 +218,31 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 		this._loading = undefined;
 	}
 
-	private display(body: string, page?: ReferencePage, hover?: string) {
-		if (!body && this._updateMode === UpdateMode.Sticky && this._last?.type === 'update') { return; }
-		this._page = page;
-		this._last = body ? {type: 'update', body, reference: page?.name, parameter: page?.parameter, back: !!this._back, hover} :
-			{type: 'noContent', body: 'No documentation found at current cursor position'};
-		this._view?.webview.postMessage(this._last);
+	private visibleCard(): Card | undefined {
+		return this._cards[this._tab] ?? this._cards.search;
+	}
+
+	private sendCard() {
+		const card = this.visibleCard();
+		this._view?.webview.postMessage(card ? {
+			type: 'update', tab: this._tab, body: card.body, hover: card.hover,
+			reference: card.page?.name, parameter: card.page?.parameter, back: !!card.back,
+		} : {type: 'noContent', tab: this._tab});
+	}
+
+	private selectTab(tab: Tab) {
+		if (tab === 'search' && !this._cards.search) {
+			vscode.commands.executeCommand('pythonSyntaxShelf.searchPythonReference', '');
+			return;
+		}
+		if (this._tab !== tab) {
+			this.cancel();
+			this._tab = tab;
+			this.updateTitle();
+			vscode.commands.executeCommand('setContext', 'pythonSyntaxShelf.showingSearch', tab === 'search');
+		}
+		this.sendCard();
+		if (tab === 'cursor') { this.update(true); }
 	}
 
 	public refresh() { this.update(true); }
@@ -220,37 +251,37 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 		if (!this._autoOpen || this._view?.visible || this._revealing) { return; }
 		this._revealing = true;
 		Promise.resolve(vscode.commands.executeCommand(DocsViewViewProvider.viewType + '.focus', {preserveFocus: true}))
-			.catch(e => console.warn('Docs View could not open', e))
+			.catch(e => console.warn('Python Syntax Shelf could not open', e))
 			.finally(() => { this._revealing = false; });
 	}
 
 	private async showParent() {
-		const from = this._page;
-		if (!from?.owner) { return; }
-		const page = await this._reference.named(from.owner);
-		if (this._page !== from || !page) { return; }
-		this._back = from;
-		await this.showReference(page, false);
+		const tab = this._tab;
+		const from = this.visibleCard();
+		if (!from?.page?.owner) { return; }
+		const page = await this._reference.named(from.page.owner);
+		if (!page || this._tab !== tab || this.visibleCard()?.page !== from.page) { return; }
+		this.cancel();
+		this._cards[tab] = {body: page.html, page, back: from};
+		this.sendCard();
 	}
 
-	public async showReference(page: ReferencePage, focus = true) {
-		this.cancel();
-		this._manual = true;
-		this._currentCacheKey = cacheKeyNone;
-		if (focus) { this._back = undefined; }
-		this.display(page.html, page);
-		if (focus) { await vscode.commands.executeCommand(DocsViewViewProvider.viewType + '.focus'); }
-		this._view?.webview.postMessage(this._last);
+	public async showReference(page: ReferencePage) {
+		this._cards.search = {body: page.html, page};
+		this.selectTab('search');
+		if (!this._view?.visible) {
+			await vscode.commands.executeCommand(DocsViewViewProvider.viewType + '.focus', {preserveFocus: true});
+		}
 	}
 
 	private async update(ignoreCache = false) {
-		if (!this._view?.visible || this._pinned || this._manual) { return; }
+		if (!this._view?.visible || this._pinned || this._tab !== 'cursor') { return; }
 		const editor = this._targets.current();
 		const key = createCacheKey(editor);
 		if (!ignoreCache && cacheKeyEquals(this._currentCacheKey, key)) { return; }
 		this._currentCacheKey = key;
 		this.cancel();
-		if (!editor) { this.display(''); return; }
+		if (!editor) { return; }
 
 		const current = {cts: new vscode.CancellationTokenSource()};
 		this._loading = current;
@@ -259,10 +290,13 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 		const pos = editor.selection.active;
 		let page: ReferencePage | null = null;
 		let hover = '';
-		const paint = (finished = false) => {
+		const paint = () => {
 			if (this._loading !== current || token.isCancellationRequested) { return; }
-			if (page) { this.display(page.html, page, hover); }
-			else if (hover || finished) { this.display(hover); }
+			const body = page?.html || hover;
+			if (body) {
+				this._cards.cursor = {body, page: page ?? undefined, hover};
+				this.sendCard();
+			}
 		};
 		const local = this._reference.at(doc, pos, token).then(result => {
 			page = result;
@@ -276,7 +310,6 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 			}
 		})();
 		await Promise.allSettled([local, native]);
-		paint(true);
 		if (this._loading === current) {
 			this._loading = undefined;
 			current.cts.dispose();
@@ -284,9 +317,7 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private updateConfiguration() {
-		const config = vscode.workspace.getConfiguration('docsView');
-		this._autoOpen = config.get<boolean>('documentationView.autoOpen', true);
-		this._updateMode = config.get<UpdateMode>('documentationView.updateMode') || UpdateMode.Live;
+		this._autoOpen = settingEnabled('documentationView.autoOpen');
 	}
 }
 

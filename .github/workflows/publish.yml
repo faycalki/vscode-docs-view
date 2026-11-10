@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: docs-view-marketplace-${{ github.ref }}
+  group: extension-marketplace-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -47,7 +47,7 @@ jobs:
           npm run release:zip
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: docs-view-release-kit
+          name: extension-release-kit
           path: release/*-release-kit.zip
           if-no-files-found: error
           compression-level: 0
@@ -76,16 +76,22 @@ jobs:
       - run: npm ci --ignore-scripts
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: docs-view-release-kit
+          name: extension-release-kit
           path: release
       - name: Verify the installer from the tested kit
+        id: installer
         run: |
+          name=$(node -p "require('./package.json').name")
+          stem="$name-$RELEASE_VERSION"
           cd release
-          unzip -j "docs-view-$RELEASE_VERSION-release-kit.zip" "docs-view-$RELEASE_VERSION.vsix" SHA256SUMS
+          unzip -j "$stem-release-kit.zip" "$stem.vsix" SHA256SUMS
           sha256sum --check --strict SHA256SUMS
+          echo "path=release/$stem.vsix" >> "$GITHUB_OUTPUT"
       - name: Reserve this version for this commit
         if: steps.current.outputs.stale == 'false' && steps.current.outputs.version == env.RELEASE_VERSION
         run: git push origin "$GITHUB_SHA:refs/tags/marketplace-v$RELEASE_VERSION"
       - name: Publish the packaged VSIX with Trusted Publishing
         if: steps.current.outputs.stale == 'false' && steps.current.outputs.version == env.RELEASE_VERSION
-        run: ./node_modules/.bin/vsce publish --oidc --packagePath "release/docs-view-$RELEASE_VERSION.vsix" --skip-duplicate
+        env:
+          INSTALLER: ${{ steps.installer.outputs.path }}
+        run: ./node_modules/.bin/vsce publish --oidc --packagePath "$INSTALLER" --skip-duplicate

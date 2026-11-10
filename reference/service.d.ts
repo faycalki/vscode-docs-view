@@ -11,5 +11,6 @@ export interface Reference {
   dispose(): void;
 }
 export function cellStart(document: vscode.TextDocument): {line: number; character: number};
+export function settingEnabled(key: string, resource?: vscode.Uri): boolean;
 export function createReference(context: vscode.ExtensionContext, changed: () => void,
   target: () => {document: vscode.TextDocument; selection: vscode.Selection} | undefined): Reference;

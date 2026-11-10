@@ -1,16 +1,19 @@
 {
-	"name": "docs-view-enhanced",
-	"displayName": "Docs View Enhanced with Seamless Python, NumPy, Pandas, Scipy, and SkLearn Offline libraries integration through Fuzzy Search",
-	"description": "Cursor-following documentation with instant offline Python and Data Science/Machine Learning libraries search in the same view.",
-	"version": "0.3.0",
+	"name": "python-syntax-shelf",
+	"displayName": "Python Syntax Shelf",
+	"description": "Instant offline syntax and documentation for Python, NumPy, pandas, SciPy, scikit-learn and more, in files and Jupyter notebooks.",
+	"version": "0.4.0",
 	"publisher": "faycalki",
 	"license": "MIT",
 	"keywords": [
+		"python",
+		"jupyter",
 		"documentation",
-		"docs",
-		"hover",
-		"sidebar",
-		"panel"
+		"numpy",
+		"pandas",
+		"scikit-learn",
+		"scipy",
+		"offline"
 	],
 	"galleryBanner": {
 		"color": "4C4C4C",
@@ -38,93 +41,80 @@
 			"explorer": [
 				{
 					"type": "webview",
-					"id": "docsView.documentation",
+					"id": "pythonSyntaxShelf.documentation",
 					"name": "Documentation",
-					"contextualTitle": "Documentation"
+					"contextualTitle": "Python Syntax Shelf"
 				}
 			]
 		},
 		"commands": [
 			{
-				"command": "docsView.documentationView.pin",
+				"command": "pythonSyntaxShelf.documentationView.pin",
 				"title": "Pin Current Documentation",
 				"icon": "$(pin)",
-				"category": "Docs View"
+				"category": "Python Syntax Shelf"
 			},
 			{
-				"command": "docsView.documentationView.unpin",
+				"command": "pythonSyntaxShelf.documentationView.unpin",
 				"title": "Unpin Current Documentation",
 				"icon": "$(pinned)",
-				"category": "Docs View"
+				"category": "Python Syntax Shelf"
 			},
 			{
-				"command": "docsView.searchPythonReference",
+				"command": "pythonSyntaxShelf.searchPythonReference",
 				"title": "Search Python Reference",
-				"category": "Docs View",
+				"category": "Python Syntax Shelf",
 				"icon": "$(search)"
 			},
 			{
-				"command": "docsView.indexEnvironment",
+				"command": "pythonSyntaxShelf.indexEnvironment",
 				"title": "Index Python Environment",
-				"category": "Docs View"
+				"category": "Python Syntax Shelf"
 			},
 			{
-				"command": "docsView.useBundledReference",
+				"command": "pythonSyntaxShelf.useBundledReference",
 				"title": "Use Bundled Python Reference",
-				"category": "Docs View"
+				"category": "Python Syntax Shelf"
 			}
 		],
 		"menus": {
 			"commandPalette": [
 				{
-					"command": "docsView.documentationView.pin",
-					"when": "!docsView.documentationView.isPinned"
+					"command": "pythonSyntaxShelf.documentationView.pin",
+					"when": "!pythonSyntaxShelf.documentationView.isPinned && !pythonSyntaxShelf.showingSearch"
 				},
 				{
-					"command": "docsView.documentationView.unpin",
-					"when": "docsView.documentationView.isPinned"
+					"command": "pythonSyntaxShelf.documentationView.unpin",
+					"when": "pythonSyntaxShelf.documentationView.isPinned && !pythonSyntaxShelf.showingSearch"
 				}
 			],
 			"view/title": [
 				{
-					"command": "docsView.documentationView.pin",
-					"when": "view == docsView.documentation && !docsView.documentationView.isPinned",
+					"command": "pythonSyntaxShelf.documentationView.pin",
+					"when": "view == pythonSyntaxShelf.documentation && !pythonSyntaxShelf.documentationView.isPinned && !pythonSyntaxShelf.showingSearch",
 					"group": "navigation"
 				},
 				{
-					"command": "docsView.documentationView.unpin",
-					"when": "view == docsView.documentation && docsView.documentationView.isPinned",
+					"command": "pythonSyntaxShelf.documentationView.unpin",
+					"when": "view == pythonSyntaxShelf.documentation && pythonSyntaxShelf.documentationView.isPinned && !pythonSyntaxShelf.showingSearch",
 					"group": "navigation"
 				},
 				{
-					"command": "docsView.searchPythonReference",
-					"when": "view == docsView.documentation",
+					"command": "pythonSyntaxShelf.searchPythonReference",
+					"when": "view == pythonSyntaxShelf.documentation",
 					"group": "navigation@1"
 				}
 			]
 		},
 		"configuration": {
-			"title": "Docs View",
+			"title": "Python Syntax Shelf",
 			"properties": {
-				"docsView.documentationView.updateMode": {
-					"type": "string",
-					"description": "Controls how the documentation view is updated when the cursor moves.",
-					"default": "live",
-					"enum": [
-						"live",
-						"sticky"
-					],
-					"enumDescriptions": [
-						"The documentation view tracks the current cursor position. Display empty content if no documentation is found at the current position.",
-						"The documentation view tries to show the documentation at the current cursor position. If there is none, it continues showing the last available documentation."
-					]
-				},
-				"docsView.pythonReference.enabled": {
+				"pythonSyntaxShelf.pythonReference.enabled": {
 					"type": "boolean",
 					"default": true,
 					"description": "Show bundled Python reference entries when the cursor is on a recognized symbol."
 				},
-				"docsView.documentationView.autoOpen": {
+				"pythonSyntaxShelf.documentationView.autoOpen": {
 					"type": "boolean",
 					"default": true,
 					"description": "Automatically reveal Documentation at startup and when you return to editing a file or notebook cell. Keyboard focus stays in the editor."
@@ -133,14 +123,14 @@
 		},
 		"keybindings": [
 			{
-				"command": "docsView.searchPythonReference",
+				"command": "pythonSyntaxShelf.searchPythonReference",
 				"key": "ctrl+alt+j",
 				"mac": "cmd+alt+j"
 			},
 			{
-				"command": "docsView.completeSearch",
+				"command": "pythonSyntaxShelf.completeSearch",
 				"key": "tab",
-				"when": "inQuickOpen && docsView.referencePicker"
+				"when": "inQuickOpen && pythonSyntaxShelf.referencePicker"
 			}
 		]
 	},

@@ -13,6 +13,15 @@ const { seedAt } = require('./catalog');
 
 const { formatEntry } = require('./format');
 
+function settingEnabled(key, resource) {
+  const config = vscode.workspace.getConfiguration('pythonSyntaxShelf', resource);
+  const setting = config.inspect(key);
+  if (setting && [setting.globalValue, setting.workspaceValue, setting.workspaceFolderValue]
+    .some((value) => value !== undefined)) return config.get(key);
+  // Honor settings saved by the earlier VSIX until the new setting is configured.
+  return vscode.workspace.getConfiguration('docsView', resource).get(key, config.get(key, true));
+}
+
 function previousCells(doc) {
   if (doc.uri.scheme !== 'vscode-notebook-cell') return [];
   const editor = vscode.window.activeNotebookEditor;
@@ -56,7 +65,7 @@ function createReference(context, changed, targetEditor) {
   async function at(doc, pos, token) {
     if (
       doc.languageId !== 'python' ||
-      !vscode.workspace.getConfiguration('docsView', doc.uri).get('pythonReference.enabled', true)
+      !settingEnabled('pythonReference.enabled', doc.uri)
     )
       return null;
     const lines = analyze(doc).lines;
@@ -97,7 +106,7 @@ function createReference(context, changed, targetEditor) {
     picker = qp;
     qp.title = 'Search Python Reference';
     qp.placeholder = 'np.where, df.groupby, train_test_split, list comprehension…';
-    qp.value = String(explicit ?? fromCursor ?? '')
+    qp.value = String(typeof explicit === 'string' ? explicit : fromCursor)
       .trim()
       .slice(0, 180);
     qp.valueSelection = [0, qp.value.length];
@@ -115,32 +124,38 @@ function createReference(context, changed, targetEditor) {
       // Assign focus to the ranked match as soon as the query results change.
       qp.activeItems = qp.items.slice(0, 1);
     };
+    let accepting = false;
     const subscriptions = [
       qp.onDidChangeValue(setItems),
       qp.onDidAccept(async () => {
         const item = qp.selectedItems[0] || qp.activeItems[0];
-        if (!item || !c) return;
-        qp.hide();
+        if (!item || !c || accepting) return;
+        accepting = true;
+        qp.busy = true;
         try {
-          await show(await render(c, item.entry));
+          const page = await render(c, item.entry);
+          if (picker !== qp) return;
+          qp.hide();
+          await show(page);
           await context.workspaceState.update(
             'reference.recent',
             [item.entry.name, ...recent.filter((n) => n !== item.entry.name)].slice(0, 8)
           );
         } catch (err) {
-          vscode.window.showErrorMessage('Docs View: ' + err.message);
+          if (picker === qp) qp.hide();
+          vscode.window.showErrorMessage('Python Syntax Shelf: ' + err.message);
         }
       }),
       qp.onDidHide(() => {
         if (picker === qp) {
           picker = undefined;
-          vscode.commands.executeCommand('setContext', 'docsView.referencePicker', false);
+          vscode.commands.executeCommand('setContext', 'pythonSyntaxShelf.referencePicker', false);
         }
         for (const sub of subscriptions) sub.dispose();
         qp.dispose();
       })
     ];
-    vscode.commands.executeCommand('setContext', 'docsView.referencePicker', true);
+    vscode.commands.executeCommand('setContext', 'pythonSyntaxShelf.referencePicker', true);
     qp.busy = true;
     qp.show();
     try {
@@ -171,4 +186,4 @@ function createReference(context, changed, targetEditor) {
     dispose: () => picker?.dispose()
   };
 }
-module.exports = { createReference, cellStart };
+module.exports = { createReference, cellStart, settingEnabled };

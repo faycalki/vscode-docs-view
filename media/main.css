@@ -6,6 +6,25 @@ body {
 	font-size: 12px;
 	line-height: 17px;
 }
+.shelf-nav {
+	position: sticky; top: 0; z-index: 1;
+	background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+	display: flex; align-items: center; justify-content: space-between; gap: .5em;
+	padding: 0 clamp(10px, 4vw, 20px); margin-bottom: .75em;
+	border-bottom: 1px solid var(--vscode-panel-border);
+	font-family: var(--vscode-font-family);
+}
+.shelf-nav [role="tablist"] { display: flex; gap: .9em; }
+.shelf-nav button {
+	font: inherit; color: var(--vscode-descriptionForeground); background: transparent;
+	border: 0; padding: .3em 0; cursor: pointer;
+}
+.shelf-nav [role="tab"] { border-bottom: 2px solid transparent; }
+.shelf-nav [aria-selected="true"] {
+	color: var(--vscode-foreground); border-color: var(--vscode-focusBorder); font-weight: 600;
+}
+.shelf-nav button:focus-visible, #main:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
+.shelf-nav #new-search { color: var(--vscode-textLink-foreground); }
 pre.shiki {
 	background: none !important;
 }

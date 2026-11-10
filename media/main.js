@@ -2,6 +2,23 @@
 (() => {
   const api = acquireVsCodeApi();
   const main = document.getElementById('main');
+  const tabs = [...document.querySelectorAll('.shelf-nav [role="tab"]')];
+  const newSearch = document.getElementById('new-search');
+  newSearch.addEventListener('click', () => api.postMessage({ type: 'search' }));
+  for (const tab of tabs) {
+    tab.addEventListener('click', () => api.postMessage({ type: 'tab', tab: tab.dataset.tab }));
+    tab.addEventListener('keydown', (event) => {
+      let next;
+      if (event.key === 'Home') next = tabs[0];
+      else if (event.key === 'End') next = tabs[tabs.length - 1];
+      else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') next = tabs.find((other) => other !== tab);
+      if (next) {
+        event.preventDefault();
+        next.focus();
+        next.click();
+      }
+    });
+  }
   let currentName, lastBody, lastHover, lastParameter;
   const clean = (html) => DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
 
@@ -52,6 +69,14 @@
   });
 
   window.addEventListener('message', ({ data }) => {
+    if (data.type !== 'noContent' && data.type !== 'update') return;
+    for (const tab of tabs) {
+      const active = tab.dataset.tab === data.tab;
+      tab.setAttribute('aria-selected', String(active));
+      tab.tabIndex = active ? 0 : -1;
+      if (active) main.setAttribute('aria-labelledby', tab.id);
+    }
+    newSearch.hidden = data.tab !== 'search';
     if (data.type === 'noContent') {
       if (lastBody === null) return;
       const empty = document.createElement('div'),
@@ -66,7 +91,6 @@
       currentName = lastHover = lastParameter = undefined;
       return;
     }
-    if (data.type !== 'update') return;
     if (currentName !== data.reference || lastBody !== data.body) {
       main.innerHTML = clean(data.body);
       currentName = data.reference;

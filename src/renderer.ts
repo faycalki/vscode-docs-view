@@ -29,7 +29,7 @@ export class Renderer {
 		const parts = (hovers)
 			.flatMap(hover => hover.contents)
 			.map(content => this.getMarkdown(content))
-			.filter(content => content.length > 0);
+			.filter(content => content.trim().length > 0);
 
 		if (!parts.length) {
 			return '';

@@ -72,7 +72,7 @@ function createEnvironment(ctx, changed) {
           throw err;
         }
         vscode.window.showWarningMessage(
-          'Docs View could not read the saved environment index. Showing bundled docs. ' + err.message
+          'Python Syntax Shelf could not read the saved environment index. Showing bundled docs. ' + err.message
         );
         return Catalog.load(bundled);
       });
@@ -81,7 +81,7 @@ function createEnvironment(ctx, changed) {
   }
   async function rebuild() {
     if (busy)
-      return vscode.window.showInformationMessage('Docs View is already indexing an environment.');
+      return vscode.window.showInformationMessage('Python Syntax Shelf is already indexing an environment.');
     if (!vscode.workspace.isTrusted)
       return vscode.window.showWarningMessage(
         'Index Python Environment is available in trusted workspaces. The bundled reference is ready to search.'
@@ -105,7 +105,7 @@ function createEnvironment(ctx, changed) {
       const next = await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: 'Docs View · building local reference',
+          title: 'Python Syntax Shelf · building local reference',
           cancellable: true
         },
         async (progress, token) => {
@@ -151,7 +151,7 @@ function createEnvironment(ctx, changed) {
     await ctx.workspaceState.update('snapshot', undefined);
     loading = Promise.resolve(next);
     changed();
-    vscode.window.showInformationMessage('Docs View is using the bundled reference.');
+    vscode.window.showInformationMessage('Python Syntax Shelf is using the bundled reference.');
   }
   return { catalog, rebuild, reset };
 }

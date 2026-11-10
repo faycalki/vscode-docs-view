@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.4.0 — Python Syntax Shelf
+
+- The new Marketplace ID is `faycalki.python-syntax-shelf`. The release workflow reads the installer name from the manifest.
+- Cursor keeps the last documented symbol or editor hover when a file or notebook cell has no documentation.
+- Search results open in their own tab and remain available while editing. Select Cursor to follow the editor again.
+
 ## 0.3.0 — Automatic Documentation and Jupyter notebooks
 
 - Reveal the view on startup and when editing resumes, while preserving keyboard focus.
