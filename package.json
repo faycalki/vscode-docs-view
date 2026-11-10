@@ -2,7 +2,7 @@
 	"name": "python-syntax-shelf",
 	"displayName": "Python Syntax Shelf",
 	"description": "Instant offline syntax and documentation for Python, NumPy, pandas, SciPy, scikit-learn and more, in files and Jupyter notebooks.",
-	"version": "0.4.0",
+	"version": "0.4.1",
 	"publisher": "faycalki",
 	"license": "MIT",
 	"keywords": [
@@ -16,7 +16,7 @@
 		"offline"
 	],
 	"galleryBanner": {
-		"color": "4C4C4C",
+		"color": "#2b203b",
 		"theme": "dark"
 	},
 	"icon": "icon.png",

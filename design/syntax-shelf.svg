@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Python Syntax Shelf</title>
+  <rect x="6" y="6" width="244" height="244" rx="54" fill="#2b203b"/>
+  <path d="M45 158v19c0 12 8 20 20 20h143" fill="none" stroke="#ff8d72"
+        stroke-width="13" stroke-linecap="round"/>
+  <path d="M94 72H73v91h21" fill="none" stroke="#fff1d9" stroke-width="14"
+        stroke-linejoin="round" stroke-linecap="round"/>
+  <rect x="108" y="61" width="27" height="109" rx="6" fill="#c4a5fa"/>
+  <path d="M114 82h15m-15 69h15" fill="none" stroke="#493458" stroke-width="5" stroke-linecap="round"/>
+  <g transform="rotate(-16 166 123)">
+    <rect x="150" y="80" width="33" height="90" rx="6" fill="#81deca"/>
+    <path d="M156 98h21m-21 8h21" fill="none" stroke="#255651" stroke-width="4.5" stroke-linecap="round"/>
+  </g>
+</svg>

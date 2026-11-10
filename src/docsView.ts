@@ -126,7 +126,7 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 			if (message?.type === 'back') {
 				const back = this.visibleCard()?.back;
 				if (back) {
-					this.cancel();
+					if (this._tab === 'cursor') { this.cancel(); }
 					this._cards[this._tab] = back;
 					this.sendCard();
 				}
@@ -236,13 +236,12 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 			return;
 		}
 		if (this._tab !== tab) {
-			this.cancel();
 			this._tab = tab;
 			this.updateTitle();
 			vscode.commands.executeCommand('setContext', 'pythonSyntaxShelf.showingSearch', tab === 'search');
 		}
 		this.sendCard();
-		if (tab === 'cursor') { this.update(true); }
+		if (tab === 'cursor') { this.update(); }
 	}
 
 	public refresh() { this.update(true); }
@@ -261,7 +260,7 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 		if (!from?.page?.owner) { return; }
 		const page = await this._reference.named(from.page.owner);
 		if (!page || this._tab !== tab || this.visibleCard()?.page !== from.page) { return; }
-		this.cancel();
+		if (tab === 'cursor') { this.cancel(); }
 		this._cards[tab] = {body: page.html, page, back: from};
 		this.sendCard();
 	}
@@ -275,13 +274,14 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private async update(ignoreCache = false) {
-		if (!this._view?.visible || this._pinned || this._tab !== 'cursor') { return; }
+		if (!this._view?.visible || this._pinned) { return; }
 		const editor = this._targets.current();
+		// Focusing the view can temporarily remove VS Code's active notebook editor.
+		if (!editor) { return; }
 		const key = createCacheKey(editor);
 		if (!ignoreCache && cacheKeyEquals(this._currentCacheKey, key)) { return; }
 		this._currentCacheKey = key;
 		this.cancel();
-		if (!editor) { return; }
 
 		const current = {cts: new vscode.CancellationTokenSource()};
 		this._loading = current;
@@ -295,7 +295,7 @@ export class DocsViewViewProvider implements vscode.WebviewViewProvider {
 			const body = page?.html || hover;
 			if (body) {
 				this._cards.cursor = {body, page: page ?? undefined, hover};
-				this.sendCard();
+				if (this._tab === 'cursor') { this.sendCard(); }
 			}
 		};
 		const local = this._reference.at(doc, pos, token).then(result => {
@@ -382,11 +382,7 @@ function cacheKeyEquals(a: CacheKey, b: CacheKey): boolean {
 	return a.equals(b);
 }
 
-function createCacheKey(editor: EditorTarget | undefined): CacheKey {
-	if (!editor) {
-		return cacheKeyNone;
-	}
-
+function createCacheKey(editor: EditorTarget): DocumentCacheKey {
 	return new DocumentCacheKey(
 		editor.document.uri,
 		editor.document.version,

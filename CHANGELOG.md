@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.4.1 — Marketplace icon
+
+- Added original Syntax Shelf artwork for the Marketplace listing.
+
 ## 0.4.0 — Python Syntax Shelf
 
 - The new Marketplace ID is `faycalki.python-syntax-shelf`. The release workflow reads the installer name from the manifest.

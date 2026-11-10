@@ -33,7 +33,7 @@ Trusted Publishing uses a short-lived GitHub identity. All configuration for the
 
 Before the first manual run, pushes to `master` build and test the kit. The first manual run reserves the version in `package.json`, then publishes. After that, a push changing the extension, bundled docs, README, or build files automatically tests, packages, and publishes the next patch. Changes confined to old downloads, design files, editor settings, or this guide skip the workflow.
 
-The first version is **0.4.0** for this release line. The next two automatic patches are **0.4.1** and **0.4.2**. GitHub records each reservation in a `marketplace-v<version>` tag pointing to the source commit. It stamps the chosen version into both manifests in the kit without writing a version-bump commit to `master`. To start a new release line, set a higher version in the source manifest and lockfile, for example with `npm version minor --no-git-tag-version`, then commit and push.
+For example, after **0.4.1**, the next automatic patch is **0.4.2**. GitHub records each reservation in a `marketplace-v<version>` tag pointing to the source commit. It stamps the chosen version into both manifests in the kit without writing a version-bump commit to `master`. To start a new release line, set a higher version in the source manifest and lockfile, for example with `npm version minor --no-git-tag-version`, then commit and push.
 
 The build uploads a downloadable **extension-release-kit** artifact. The publishing job verifies the enclosed VSIX's SHA-256 and sends those bytes to the Marketplace. If publication fails, correct the reported issue and rerun the failed job. A retry of the same commit reuses the same tag. An older run cannot supersede a newer reserved version.
 

@@ -100,6 +100,7 @@ test('search survives focus, late lookups, cell changes and reopening, with inde
   view.events.message({ type: 'parent' });
   await settle();
   assert.equal(view.last().reference, 'pandas.DataFrame');
+  view.leaveEditor(); // Focusing the sidebar can clear the active notebook editor.
   view.events.message({ type: 'tab', tab: 'cursor' });
   await settle();
   assert.equal(view.last().reference, 'numpy.where');
